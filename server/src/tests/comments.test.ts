@@ -3,9 +3,22 @@ import jwt from "jsonwebtoken"
 import request from "supertest"
 import { pool } from "../db/index"
 import { errorHandler } from "../middleware/error.middleware"
-import { commentsRouter } from "../routes/comments.routes"
+import { createCommentsRouter } from "../routes/comments.routes"
 
 const JWT_SECRET = "learnvault-secret"
+
+const testJwtService = {
+	signWalletToken: (addr: string) => jwt.sign({ sub: addr }, JWT_SECRET),
+	verifyWalletToken: (token: string) => {
+		const d = jwt.verify(token, JWT_SECRET) as {
+			sub?: string
+			address?: string
+		}
+		const sub = d.sub ?? d.address ?? ""
+		if (!sub) throw new Error("Invalid token")
+		return { sub }
+	},
+}
 
 function makeToken(address = "GUSER123") {
 	return jwt.sign({ address }, JWT_SECRET, { expiresIn: "1h" })
@@ -14,7 +27,7 @@ function makeToken(address = "GUSER123") {
 function buildApp() {
 	const app = express()
 	app.use(express.json())
-	app.use("/api", commentsRouter)
+	app.use("/api", createCommentsRouter(testJwtService))
 	app.use(errorHandler)
 	return app
 }
