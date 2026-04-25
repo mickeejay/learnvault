@@ -9,6 +9,7 @@ import {
 	ResponsiveContainer,
 	Tooltip,
 } from "recharts"
+import AddressDisplay from "../components/AddressDisplay"
 import TxHashLink from "../components/TxHashLink"
 import {
 	useAdminStats,
@@ -31,7 +32,6 @@ import {
 import { apiFetchJson } from "../lib/api"
 import { getAuthToken } from "../util/auth"
 import { shortenContractId } from "../util/contract"
-import AddressDisplay from "../components/AddressDisplay"
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || "http://localhost:4000"
 
@@ -177,7 +177,10 @@ const ConfirmDialog: React.FC<{
 			<p className="text-sm text-white/60 mb-1">
 				Learner:{" "}
 				<span className="font-mono text-white/90">
-					<AddressDisplay address={milestone.learnerAddress} showExplorerLink={false} />
+					<AddressDisplay
+						address={milestone.learnerAddress}
+						showExplorerLink={false}
+					/>
 				</span>
 			</p>
 			<p className="text-sm text-white/60 mb-4">
@@ -308,7 +311,15 @@ const Admin: React.FC = () => {
 			<aside className="w-72 glass border-r border-white/5 p-8 flex flex-col gap-8">
 				<nav className="flex flex-col gap-2">
 					{(
-						["courses", "milestones", "users", "wiki", "treasury", "scholarships", "contracts"] as const
+						[
+							"courses",
+							"milestones",
+							"users",
+							"wiki",
+							"treasury",
+							"scholarships",
+							"contracts",
+						] as const
 					).map((section) => (
 						<button
 							key={section}
@@ -688,10 +699,10 @@ const MilestoneQueue: React.FC = () => {
 										className="border-b border-white/5 hover:bg-white/3 transition-colors"
 									>
 										<td className="py-3 px-4">
-											<AddressDisplay 
-												address={milestone.learnerAddress} 
-												prefixLength={8} 
-												suffixLength={4} 
+											<AddressDisplay
+												address={milestone.learnerAddress}
+												prefixLength={8}
+												suffixLength={4}
 												showExplorerLink={false}
 												addressClassName="text-xs text-white/50"
 											/>
@@ -786,6 +797,8 @@ const MilestoneQueue: React.FC = () => {
 		</section>
 	)
 }
+
+export default Admin
 
 const UserLookup: React.FC = () => {
 	const [search, setSearch] = useState("")
@@ -1494,20 +1507,24 @@ const ScholarshipMetrics: React.FC = () => {
 			{loading && (
 				<div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
 					{Array.from({ length: 6 }).map((_, i) => (
-						<div key={i} className="h-24 rounded-2xl bg-white/5 animate-pulse" />
+						<div
+							key={i}
+							className="h-24 rounded-2xl bg-white/5 animate-pulse"
+						/>
 					))}
 				</div>
 			)}
 
-			{error && (
-				<p className="text-red-400 mb-6">{error}</p>
-			)}
+			{error && <p className="text-red-400 mb-6">{error}</p>}
 
 			{metrics && (
 				<>
 					<div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
 						{[
-							{ label: "Active Scholarships", value: metrics.active_scholarships },
+							{
+								label: "Active Scholarships",
+								value: metrics.active_scholarships,
+							},
 							{ label: "Total Scholars", value: metrics.total_scholars },
 							{
 								label: "Completion Rate",
@@ -1545,7 +1562,10 @@ const ScholarshipMetrics: React.FC = () => {
 								outerRadius="80%"
 								data={chartData}
 							>
-								<RadialBar dataKey="value" label={{ position: "insideStart", fill: "#fff" }} />
+								<RadialBar
+									dataKey="value"
+									label={{ position: "insideStart", fill: "#fff" }}
+								/>
 								<Legend />
 								<Tooltip formatter={(value: number) => `${value}%`} />
 							</RadialBarChart>
@@ -1556,4 +1576,3 @@ const ScholarshipMetrics: React.FC = () => {
 		</section>
 	)
 }
-
