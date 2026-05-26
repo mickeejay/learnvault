@@ -135,7 +135,7 @@ pub struct CourseMilestone;
 
 #[contractimpl]
 impl CourseMilestone {
-    pub fn initialize(env: Env, admin: Address) {
+    pub fn initialize(env: Env, admin: Address, learn_token: Address) {
         if env.storage().instance().has(&ADMIN_KEY) {
             panic_with_error!(&env, Error::AlreadyInitialized);
         }
@@ -144,7 +144,7 @@ impl CourseMilestone {
         upgrade::init(&env);
         env.storage()
             .instance()
-            .set(&LEARN_TOKEN_KEY, &learn_token_contract);
+            .set(&LEARN_TOKEN_KEY, &learn_token);
 
         Self::extend_instance(&env);
     }
@@ -331,7 +331,7 @@ impl CourseMilestone {
             .persistent()
             .get::<_, MilestoneStatus>(&state_key)
             .unwrap_or(MilestoneStatus::NotStarted);
-        Self::bump_persistent_ttl(&env, &state_key);
+        Self::extend_persistent(&env, &state_key);
 
         if current_state == MilestoneStatus::Pending || current_state == MilestoneStatus::Approved {
             panic_with_error!(&env, Error::DuplicateSubmission);
@@ -346,7 +346,7 @@ impl CourseMilestone {
             DataKey::MilestoneSubmission(learner.clone(), course_id.clone(), milestone_id);
 
         env.storage().persistent().set(&submission_key, &submission);
-        Self::bump_persistent_ttl(&env, &submission_key);
+        Self::extend_persistent(&env, &submission_key);
         env.storage()
             .persistent()
             .set(&state_key, &MilestoneStatus::Pending);
@@ -455,6 +455,17 @@ impl CourseMilestone {
             Self::extend_persistent(&env, &reward_key);
         }
 
+        // Mint LRN reward when non-zero — consistent with verify_milestone.
+        if lrn_reward > 0 {
+            let learn_token_address: Address = env
+                .storage()
+                .instance()
+                .get(&LEARN_TOKEN_KEY)
+                .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
+            let learn_token_client = LearnTokenClient::new(&env, &learn_token_address);
+            learn_token_client.mint(&learner, &lrn_reward);
+        }
+
         // Increment completion count
         let count_key = DataKey::CompletedCount(learner.clone(), course_id.clone());
         let count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0);
@@ -525,7 +536,7 @@ impl CourseMilestone {
         }
         Self::ensure_valid_milestone(&env, &course_id, milestone_id);
 
-        if tokens_amount <= 0 {
+        if tokens_amount < 0 {
             panic_with_error!(&env, Error::InvalidReward);
         }
 
@@ -546,9 +557,14 @@ impl CourseMilestone {
         let completed_key = DataKey::Completed(learner.clone(), course_id.clone(), milestone_id);
         env.storage().persistent().set(&completed_key, &true);
 
-        let learn_token_address: Address = env.storage().instance().get(&LEARN_TOKEN_KEY).unwrap();
-        let learn_token_client = LearnTokenClient::new(&env, &learn_token_address);
-        learn_token_client.mint(&learner, &tokens_amount);
+        // Only mint when reward is non-zero; zero-reward milestones (non-incentivised
+        // checkpoints) are valid and must not panic the LearnToken mint guard.
+        if tokens_amount > 0 {
+            let learn_token_address: Address =
+                env.storage().instance().get(&LEARN_TOKEN_KEY).unwrap();
+            let learn_token_client = LearnTokenClient::new(&env, &learn_token_address);
+            learn_token_client.mint(&learner, &tokens_amount);
+        }
 
         Self::extend_persistent(&env, &state_key);
         Self::extend_persistent(&env, &completed_key);
@@ -602,7 +618,7 @@ impl CourseMilestone {
             }
             Self::ensure_valid_milestone(&env, &entry.course_id, entry.milestone_id);
 
-            if entry.lrn_reward <= 0 {
+            if entry.lrn_reward < 0 {
                 panic_with_error!(&env, Error::InvalidReward);
             }
 
@@ -631,7 +647,11 @@ impl CourseMilestone {
                 entry.milestone_id,
             );
             env.storage().persistent().set(&completed_key, &true);
-            learn_token_client.mint(&entry.learner, &entry.lrn_reward);
+            // Skip mint for zero-reward entries (non-incentivised checkpoints).
+            // LearnToken::mint panics on amount <= 0, so guard before calling.
+            if entry.lrn_reward > 0 {
+                learn_token_client.mint(&entry.learner, &entry.lrn_reward);
+            }
 
             Self::extend_persistent(&env, &state_key);
             Self::extend_persistent(&env, &completed_key);
