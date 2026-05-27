@@ -1,4 +1,12 @@
--- User profiles table for rich profile data (bio, avatar, social links, etc.)
+-- Migration 013 originally introduced a richer user_profiles schema with a
+-- `stellar_address` column. Earlier migrations already created `user_profiles`
+-- with `address` as the primary key (see 009_user_profiles.sql).
+--
+-- This migration is written to be idempotent across both schemas so CI
+-- migrations never fail on "column does not exist".
+
+-- Create the v2 schema only if the table does not exist at all.
+-- If it exists (from 009), we avoid destructive changes.
 CREATE TABLE IF NOT EXISTS user_profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     stellar_address TEXT NOT NULL UNIQUE REFERENCES linked_wallets(stellar_address) ON DELETE CASCADE,
@@ -12,23 +20,58 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Index for quick lookup by stellar address
-CREATE INDEX IF NOT EXISTS idx_user_profiles_stellar_address ON user_profiles (stellar_address);
-
--- Index for searching by display name
-CREATE INDEX IF NOT EXISTS idx_user_profiles_display_name ON user_profiles (display_name) WHERE display_name IS NOT NULL;
-
--- Trigger to update updated_at on modification
-CREATE OR REPLACE FUNCTION update_user_profiles_updated_at()
-RETURNS TRIGGER AS $$
+-- Create whichever lookup index matches the active schema.
+DO $$
 BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'user_profiles' AND column_name = 'stellar_address'
+    ) THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_user_profiles_stellar_address ON user_profiles (stellar_address)';
+    ELSIF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'user_profiles' AND column_name = 'address'
+    ) THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_user_profiles_address ON user_profiles (address)';
+    END IF;
+END $$;
 
-DROP TRIGGER IF EXISTS trigger_user_profiles_updated_at ON user_profiles;
-CREATE TRIGGER trigger_user_profiles_updated_at
-    BEFORE UPDATE ON user_profiles
-    FOR EACH ROW
-    EXECUTE FUNCTION update_user_profiles_updated_at();
+-- Display name search index is valid in both schemas (if the column exists).
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'user_profiles' AND column_name = 'display_name'
+    ) THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_user_profiles_display_name ON user_profiles (display_name) WHERE display_name IS NOT NULL';
+    END IF;
+END $$;
+
+-- Trigger to update updated_at on modification (only when the column exists).
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'user_profiles' AND column_name = 'updated_at'
+    ) THEN
+        EXECUTE $fn$
+            CREATE OR REPLACE FUNCTION update_user_profiles_updated_at()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                NEW.updated_at = CURRENT_TIMESTAMP;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+        $fn$;
+
+        EXECUTE 'DROP TRIGGER IF EXISTS trigger_user_profiles_updated_at ON user_profiles';
+        EXECUTE 'CREATE TRIGGER trigger_user_profiles_updated_at
+            BEFORE UPDATE ON user_profiles
+            FOR EACH ROW
+            EXECUTE FUNCTION update_user_profiles_updated_at()';
+    END IF;
+END $$;
