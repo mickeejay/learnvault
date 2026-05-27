@@ -1,6 +1,7 @@
 import { type Request, type Response } from "express"
 import sanitizeHtml from "sanitize-html"
 import { pool } from "../db"
+import { invalidateApiResponseCacheType } from "../lib/api-response-cache"
 
 type CourseRow = {
 	id: number
@@ -405,6 +406,8 @@ export const getCourseLessonById = async (
 			return
 		}
 
+		// Invalidate cached /api/courses responses after content changes.
+		void invalidateApiResponseCacheType("courses")
 		res.status(200).json(toLesson(lesson))
 	} catch {
 		res.status(500).json({ error: "Internal server error" })
@@ -847,6 +850,8 @@ export const createCourse = async (
 			],
 		)) as { rows: CourseRow[] }
 
+		// Invalidate cached /api/courses responses after content changes.
+		void invalidateApiResponseCacheType("courses")
 		res.status(201).json(toCourse(insert.rows[0]))
 	} catch (error) {
 		if (typeof error === "object" && error && "code" in error) {
@@ -957,6 +962,8 @@ export const updateCourse = async (
 			values,
 		)) as { rows: CourseRow[] }
 
+		// Invalidate cached /api/courses responses after content changes.
+		void invalidateApiResponseCacheType("courses")
 		res.status(200).json(toCourse(result.rows[0]))
 	} catch (error) {
 		if (typeof error === "object" && error && "code" in error) {
