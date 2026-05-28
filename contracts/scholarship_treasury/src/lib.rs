@@ -33,6 +33,7 @@ const TOTAL_GOV_KEY: Symbol = symbol_short!("TOTALGOV");
 const MIN_LRN_TO_PROPOSE_KEY: Symbol = symbol_short!("MINPROP");
 const GOV_PER_USDC: i128 = 100;
 const PROPOSAL_DEADLINE_LEDGERS: u32 = 100_800;
+const VOTING_PERIOD_KEY: Symbol = symbol_short!("VOTINGPERIOD");
 const QUORUM_KEY: Symbol = symbol_short!("QUORUM");
 const APPROVAL_BPS_KEY: Symbol = symbol_short!("APPBPS");
 
@@ -82,6 +83,11 @@ pub struct Proposal {
     pub deadline_ledger: u32,
     pub executed: bool,
     pub cancelled: bool,
+    pub kind: ProposalKind,
+    // Fields for parameter change proposals (optional)
+    pub new_quorum: i128,
+    pub new_approval_bps: u32,
+    pub new_voting_period: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -90,6 +96,12 @@ pub enum ProposalStatus {
     Pending,
     Approved,
     Rejected,
+}
+
+#[contracttype]
+pub enum ProposalKind {
+    Disbursement,
+    ParameterChange,
 }
 
 #[contracterror]
@@ -228,6 +240,15 @@ impl ScholarshipTreasury {
             .unwrap_or(0)
     }
 
+    // New getter for voting period (in ledger steps)
+    pub fn get_voting_period(env: Env) -> u32 {
+        Self::extend_instance(&env);
+        env.storage()
+            .instance()
+            .get::<_, u32>(&VOTING_PERIOD_KEY)
+            .unwrap_or(0)
+    }
+
     pub fn set_quorum(env: Env, new_quorum: i128) {
         let admin = Self::admin(&env);
         admin.require_auth();
@@ -244,6 +265,16 @@ impl ScholarshipTreasury {
             panic_with_error!(&env, Error::InvalidAmount);
         }
         env.storage().instance().set(&APPROVAL_BPS_KEY, &new_bps);
+    }
+
+    // New admin setter for voting period
+    pub fn set_voting_period(env: Env, new_period: u32) {
+        let admin = Self::admin(&env);
+        admin.require_auth();
+        if new_period == 0 {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+        env.storage().instance().set(&VOTING_PERIOD_KEY, &new_period);
     }
 
     pub fn pause(env: Env) {
@@ -416,19 +447,38 @@ impl ScholarshipTreasury {
                 .unwrap_or(false);
 
         proposal.executed = true;
+        // Handle based on proposal kind
+        match proposal.kind {
+            ProposalKind::Disbursement => {
+                if passed {
+                    Self::disburse_internal(&env, &proposal.applicant, proposal.amount);
+                }
+            },
+            ProposalKind::ParameterChange => {
+                if passed {
+                    // Apply parameter changes if non-zero values provided
+                    if proposal.new_quorum > 0 {
+                        Self::set_quorum(&env, proposal.new_quorum);
+                    }
+                    if proposal.new_approval_bps > 0 {
+                        Self::set_approval_bps(&env, proposal.new_approval_bps);
+                    }
+                    if proposal.new_voting_period > 0 {
+                        Self::set_voting_period(&env, proposal.new_voting_period);
+                    }
+                }
+            },
+        }
+        // Persist updated proposal (executed flag already set)
         env.storage()
             .persistent()
             .set(&DataKey::Proposal(proposal_id), &proposal);
         Self::extend_persistent(&env, &DataKey::Proposal(proposal_id));
 
-        if passed {
-            Self::disburse_internal(&env, &proposal.applicant, proposal.amount);
-        }
-
         ProposalExecuted {
             proposal_id,
             passed,
-            amount: if passed { proposal.amount } else { 0 },
+            amount: if passed && proposal.kind == ProposalKind::Disbursement { proposal.amount } else { 0 },
         }
         .publish(&env);
     }
@@ -577,10 +627,14 @@ impl ScholarshipTreasury {
             deadline_ledger: Self::checked_add_u32(
                 &env,
                 env.ledger().sequence(),
-                PROPOSAL_DEADLINE_LEDGERS,
+                Self::get_voting_period(env.clone()),
             ),
             executed: false,
             cancelled: false,
+            kind: ProposalKind::Disbursement,
+            new_quorum: 0,
+            new_approval_bps: 0,
+            new_voting_period: 0,
         };
 
         env.storage()
