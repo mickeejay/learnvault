@@ -2,6 +2,7 @@ import { BookOpen } from "lucide-react"
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import BookmarkButton from "../components/BookmarkButton"
+import CourseCategoryBadge from "../components/CourseCategoryBadge"
 import { CourseFilter } from "../components/CourseFilter"
 import Pagination from "../components/Pagination"
 import SponsorLogosForTrack from "../components/SponsorLogosForTrack"
@@ -203,9 +204,7 @@ const Courses: React.FC = () => {
 								/>
 								<div className="flex h-full flex-col p-6">
 									<div className="mb-4 flex items-center justify-between gap-3">
-										<span className="rounded-full border border-brand-cyan/20 bg-brand-blue/20 px-3 py-1 text-xs font-semibold text-brand-cyan">
-											{course.track}
-										</span>
+										<CourseCategoryBadge category={course.track} />
 										<span
 											className={`rounded-full border px-3 py-1 text-xs font-semibold ${levelStyles[course.level]}`}
 										>
