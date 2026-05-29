@@ -69,6 +69,7 @@ function App() {
 					/>
 					<Route path="/dao/propose" element={renderRoute(<DaoPropose />)} />
 					<Route path="/leaderboard" element={renderRoute(<Leaderboard />)} />
+					<Route path="/peer-review" element={renderRoute(<PeerReview />)} />
 					<Route path="/community" element={renderRoute(<Community />)} />
 					<Route path="/history" element={renderRoute(<History />)} />
 					<Route path="/profile" element={renderRoute(<Profile />)} />
@@ -134,7 +135,7 @@ const AppLayout = () => (
 		<TestnetBanner />
 		<NavBar />
 		<OnboardingTour />
-		<main id="main-content" className="relative z-10 flex-1" tabIndex={-1}>
+		<main id="main-content" className="flex-1 relative z-10" tabIndex={-1}>
 			<Outlet />
 		</main>
 		<Footer />
