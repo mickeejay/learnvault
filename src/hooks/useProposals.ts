@@ -32,6 +32,12 @@ export interface ProposalRecord {
 		| "Rejected"
 }
 
+export interface ProposalVoteRecord {
+	voterAddress: string
+	support: boolean
+	weight: bigint
+}
+
 export interface CreateProposalInput {
 	author_address: string
 	title: string
@@ -178,6 +184,40 @@ async function fetchVotingPower(address?: string): Promise<bigint> {
 	return parseBigInt(data.gov_balance)
 }
 
+async function fetchProposalVotes(
+	proposalId: number,
+): Promise<{ votes: ProposalVoteRecord[]; unavailable: boolean }> {
+	const response = await fetch(`${API_BASE}/api/proposals/${proposalId}/votes`)
+	if (response.status === 404) {
+		return { votes: [], unavailable: true }
+	}
+	const data = await readJson<
+		| Array<{
+				voter_address?: string
+				support?: boolean
+				weight?: string | number
+		  }>
+		| {
+				votes?: Array<{
+					voter_address?: string
+					support?: boolean
+					weight?: string | number
+				}>
+		  }
+	>(response)
+	const rows = Array.isArray(data) ? data : (data.votes ?? [])
+	return {
+		votes: rows
+			.map((row) => ({
+				voterAddress: String(row.voter_address ?? ""),
+				support: Boolean(row.support),
+				weight: parseBigInt(row.weight),
+			}))
+			.filter((row) => row.voterAddress.length > 0),
+		unavailable: false,
+	}
+}
+
 export function useProposals() {
 	const { address } = useWallet()
 	const queryClient = useQueryClient()
@@ -318,6 +358,15 @@ export function useProposal(proposalId: number | null) {
 		queryKey: ["proposal", proposalId, address],
 		queryFn: () => fetchProposal(proposalId as number, address),
 		enabled: proposalId !== null,
+		staleTime: 60 * 1000,
+	})
+}
+
+export function useProposalVotes(proposalId: number | null, enabled = true) {
+	return useQuery({
+		queryKey: ["proposal", proposalId, "votes"],
+		queryFn: () => fetchProposalVotes(proposalId as number),
+		enabled: proposalId !== null && enabled,
 		staleTime: 60 * 1000,
 	})
 }
