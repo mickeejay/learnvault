@@ -193,7 +193,7 @@ export const buildOpenApiSpec = () => {
 							votes_against: { type: "integer" },
 							status: {
 								type: "string",
-								enum: ["pending", "approved", "rejected"],
+								enum: ["pending", "approved", "queued", "rejected"],
 							},
 							cancelled: { type: "boolean" },
 							deadline: { type: "string", format: "date-time" },
