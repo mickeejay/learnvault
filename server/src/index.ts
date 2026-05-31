@@ -30,7 +30,11 @@ import { setupConsoleRequestTracing } from "./lib/request-context"
 import { createRequireTrustedOrigin } from "./middleware/csrf.middleware"
 import { errorHandler } from "./middleware/error.middleware"
 import { maybeMountOpenApiValidator } from "./middleware/openapi-validator.middleware"
-import { globalLimiter } from "./middleware/rate-limit.middleware"
+import { apiVersionRedirect } from "./middleware/api-version.middleware"
+import {
+	generalLimiter,
+	writeLimiter,
+} from "./middleware/rate-limit.middleware"
 import { requestLogger } from "./middleware/request-logger.middleware"
 import { buildOpenApiSpec } from "./openapi"
 import { adminMilestonesRouter } from "./routes/admin-milestones.routes"
@@ -160,43 +164,59 @@ app.use(
 
 app.use(createRequireTrustedOrigin(allowedOrigins))
 app.use(express.json())
-app.use(globalLimiter)
+
+// Rate limiting: a general per-IP limit on every request (100 / 15 min), with a
+// stricter limit applied to mutation requests (20 / 15 min). 429 responses carry
+// a Retry-After header (see rate-limit.middleware.ts).
+app.use(generalLimiter)
+app.use((req, res, next) => {
+	const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method)
+	if (isMutation) {
+		writeLimiter(req, res, next)
+		return
+	}
+	next()
+})
 
 // Optional request/response validation against docs/openapi.yaml (CI/test only)
 void maybeMountOpenApiValidator(app)
 
-app.use("/api", healthRouter)
-app.use("/api/auth", createAuthRouter(authService, jwtService))
-app.use("/api", createMeRouter(jwtService))
-app.use("/api", coursesRouter)
-app.use("/api", createEnrollmentsRouter(jwtService))
-app.use("/api", createScholarsRouter(jwtService))
-app.use("/api", scholarshipsRouter)
-app.use("/api", mentorshipRouter)
-app.use("/api", createRecommendationsRouter(jwtService))
-app.use("/api", createForumRouter(jwtService))
-app.use("/api", createCredentialsRouter(jwtService))
-app.use("/api", validatorRouter)
-app.use("/api", eventsRouter)
-app.use("/api/community", communityRouter)
-app.use("/api", createCommentsRouter(jwtService))
-app.use("/api", createPeerReviewRouter(jwtService))
-app.use("/api", leaderboardRouter)
-app.use("/api", governanceRouter)
-app.use("/api", treasuryRouter)
-app.use("/api", wikiRouter)
-app.use("/api", adminRouter)
-app.use("/api", adminMilestonesRouter)
-app.use("/api", moderationRouter)
-app.use("/api", scholarsRouter)
-app.use("/api", createUserProfileRouter(jwtService))
-app.use("/api", createUploadRouter(jwtService))
-app.use("/api", enrollmentsRouter)
-app.use("/api", profilesRouter)
-app.use("/api", scholarshipsRouter)
-app.use("/api", treasuryRouter)
-app.use("/api", notificationsRouter)
-app.use("/api/wiki", wikiRouter)
+// API versioning: all routes are served under /api/v1. Legacy /api/* requests
+// are 301-redirected to their /api/v1/* equivalent for backwards compatibility.
+app.use(apiVersionRedirect)
+
+app.use("/api/v1", healthRouter)
+app.use("/api/v1/auth", createAuthRouter(authService, jwtService))
+app.use("/api/v1", createMeRouter(jwtService))
+app.use("/api/v1", coursesRouter)
+app.use("/api/v1", createEnrollmentsRouter(jwtService))
+app.use("/api/v1", createScholarsRouter(jwtService))
+app.use("/api/v1", scholarshipsRouter)
+app.use("/api/v1", mentorshipRouter)
+app.use("/api/v1", createRecommendationsRouter(jwtService))
+app.use("/api/v1", createForumRouter(jwtService))
+app.use("/api/v1", createCredentialsRouter(jwtService))
+app.use("/api/v1", validatorRouter)
+app.use("/api/v1", eventsRouter)
+app.use("/api/v1/community", communityRouter)
+app.use("/api/v1", createCommentsRouter(jwtService))
+app.use("/api/v1", createPeerReviewRouter(jwtService))
+app.use("/api/v1", leaderboardRouter)
+app.use("/api/v1", governanceRouter)
+app.use("/api/v1", treasuryRouter)
+app.use("/api/v1", wikiRouter)
+app.use("/api/v1", adminRouter)
+app.use("/api/v1", adminMilestonesRouter)
+app.use("/api/v1", moderationRouter)
+app.use("/api/v1", scholarsRouter)
+app.use("/api/v1", createUserProfileRouter(jwtService))
+app.use("/api/v1", createUploadRouter(jwtService))
+app.use("/api/v1", enrollmentsRouter)
+app.use("/api/v1", profilesRouter)
+app.use("/api/v1", scholarshipsRouter)
+app.use("/api/v1", treasuryRouter)
+app.use("/api/v1", notificationsRouter)
+app.use("/api/v1/wiki", wikiRouter)
 
 // Start event poller (non-prod only for now)
 if (process.env.NODE_ENV !== "production") {
