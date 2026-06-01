@@ -49,6 +49,7 @@ import { donorsRouter } from "./routes/donors.routes"
 import { createEnrollmentsRouter } from "./routes/enrollments.routes"
 import { eventsRouter } from "./routes/events.routes"
 import { governanceRouter } from "./routes/governance.routes"
+import { createMilestoneAppealRouter } from "./routes/milestone-appeal.routes"
 import { healthRouter } from "./routes/health.routes"
 import { impactRouter } from "./routes/impact.routes"
 import { leaderboardRouter } from "./routes/leaderboard.routes"
@@ -204,8 +205,7 @@ app.use("/api", treasuryRouter)
 app.use("/api", wikiRouter)
 app.use("/api", adminRouter)
 app.use("/api", adminMilestonesRouter)
-app.use("/api", adminProviderKeysRouter)
-app.use("/api", providerRouter)
+app.use("/api", createMilestoneAppealRouter(jwtService))
 app.use("/api", moderationRouter)
 app.use("/api", scholarsRouter)
 app.use("/api", createUserProfileRouter(jwtService))
