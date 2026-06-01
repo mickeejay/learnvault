@@ -1,11 +1,17 @@
 import { createPublicKey } from "node:crypto"
 import path from "path"
+import cors from "cors"
 import dotenv from "dotenv"
 
 // Load server/.env whether you run from repo root or from server/
 dotenv.config({ path: path.resolve(__dirname, "..", ".env") })
 
 // Initialize Sentry FIRST before any other imports that might throw
+import dotenv from "dotenv"
+import express from "express"
+import helmet from "helmet"
+import swaggerUi from "swagger-ui-express"
+import { z } from "zod"
 import { initSentry, sentryRequestHandler } from "./lib/sentry"
 
 initSentry({
@@ -15,12 +21,6 @@ initSentry({
 	tracesSampleRate: env.NODE_ENV === "production" ? 0.1 : 1.0,
 	profilesSampleRate: env.NODE_ENV === "production" ? 0.1 : 1.0,
 })
-import cors from "cors"
-import dotenv from "dotenv"
-import express from "express"
-import helmet from "helmet"
-import swaggerUi from "swagger-ui-express"
-import { z } from "zod"
 
 import { initDb } from "./db/index"
 import { createNonceStore } from "./db/nonce-store"
@@ -38,6 +38,7 @@ import {
 import { requestLogger } from "./middleware/request-logger.middleware"
 import { buildOpenApiSpec } from "./openapi"
 import { adminMilestonesRouter } from "./routes/admin-milestones.routes"
+import { adminProviderKeysRouter } from "./routes/admin-provider-keys.routes"
 import { adminRouter } from "./routes/admin.routes"
 import { createAuthRouter } from "./routes/auth.routes"
 import { createCommentsRouter } from "./routes/comments.routes"
@@ -56,6 +57,7 @@ import { mentorshipRouter } from "./routes/mentorship.routes"
 import { moderationRouter } from "./routes/moderation.routes"
 import { notificationsRouter } from "./routes/notifications.routes"
 import { createPeerReviewRouter } from "./routes/peer-review.routes"
+import { providerRouter } from "./routes/provider.routes"
 import { createRecommendationsRouter } from "./routes/recommendations.routes"
 import { createScholarsRouter } from "./routes/scholars.routes"
 import { scholarshipsRouter } from "./routes/scholarships.routes"
@@ -65,7 +67,6 @@ import { createUploadRouter } from "./routes/upload.routes"
 import { createUserProfileRouter } from "./routes/user-profile.routes"
 import { validatorRouter } from "./routes/validator.routes"
 import { wikiRouter } from "./routes/wiki.routes"
-import { createRecommendationsRouter } from "./routes/recommendations.routes"
 import { createAuthService } from "./services/auth.service"
 import {
 	createJwtService,
@@ -181,42 +182,40 @@ app.use((req, res, next) => {
 // Optional request/response validation against docs/openapi.yaml (CI/test only)
 void maybeMountOpenApiValidator(app)
 
-// API versioning: all routes are served under /api/v1. Legacy /api/* requests
-// are 301-redirected to their /api/v1/* equivalent for backwards compatibility.
-app.use(apiVersionRedirect)
-
-app.use("/api/v1", healthRouter)
-app.use("/api/v1/auth", createAuthRouter(authService, jwtService))
-app.use("/api/v1", createMeRouter(jwtService))
-app.use("/api/v1", coursesRouter)
-app.use("/api/v1", createEnrollmentsRouter(jwtService))
-app.use("/api/v1", createScholarsRouter(jwtService))
-app.use("/api/v1", scholarshipsRouter)
-app.use("/api/v1", mentorshipRouter)
-app.use("/api/v1", createRecommendationsRouter(jwtService))
-app.use("/api/v1", createForumRouter(jwtService))
-app.use("/api/v1", createCredentialsRouter(jwtService))
-app.use("/api/v1", validatorRouter)
-app.use("/api/v1", eventsRouter)
-app.use("/api/v1/community", communityRouter)
-app.use("/api/v1", createCommentsRouter(jwtService))
-app.use("/api/v1", createPeerReviewRouter(jwtService))
-app.use("/api/v1", leaderboardRouter)
-app.use("/api/v1", governanceRouter)
-app.use("/api/v1", treasuryRouter)
-app.use("/api/v1", wikiRouter)
-app.use("/api/v1", adminRouter)
-app.use("/api/v1", adminMilestonesRouter)
-app.use("/api/v1", moderationRouter)
-app.use("/api/v1", scholarsRouter)
-app.use("/api/v1", createUserProfileRouter(jwtService))
-app.use("/api/v1", createUploadRouter(jwtService))
-app.use("/api/v1", enrollmentsRouter)
-app.use("/api/v1", profilesRouter)
-app.use("/api/v1", scholarshipsRouter)
-app.use("/api/v1", treasuryRouter)
-app.use("/api/v1", notificationsRouter)
-app.use("/api/v1/wiki", wikiRouter)
+app.use("/api", healthRouter)
+app.use("/api/auth", createAuthRouter(authService, jwtService))
+app.use("/api", createMeRouter(jwtService))
+app.use("/api", coursesRouter)
+app.use("/api", createEnrollmentsRouter(jwtService))
+app.use("/api", createScholarsRouter(jwtService))
+app.use("/api", scholarshipsRouter)
+app.use("/api", mentorshipRouter)
+app.use("/api", createRecommendationsRouter(jwtService))
+app.use("/api", createForumRouter(jwtService))
+app.use("/api", createCredentialsRouter(jwtService))
+app.use("/api", validatorRouter)
+app.use("/api", eventsRouter)
+app.use("/api/community", communityRouter)
+app.use("/api", createCommentsRouter(jwtService))
+app.use("/api", createPeerReviewRouter(jwtService))
+app.use("/api", leaderboardRouter)
+app.use("/api", governanceRouter)
+app.use("/api", treasuryRouter)
+app.use("/api", wikiRouter)
+app.use("/api", adminRouter)
+app.use("/api", adminMilestonesRouter)
+app.use("/api", adminProviderKeysRouter)
+app.use("/api", providerRouter)
+app.use("/api", moderationRouter)
+app.use("/api", scholarsRouter)
+app.use("/api", createUserProfileRouter(jwtService))
+app.use("/api", createUploadRouter(jwtService))
+app.use("/api", enrollmentsRouter)
+app.use("/api", profilesRouter)
+app.use("/api", scholarshipsRouter)
+app.use("/api", treasuryRouter)
+app.use("/api", notificationsRouter)
+app.use("/api/wiki", wikiRouter)
 
 // Start event poller (non-prod only for now)
 if (process.env.NODE_ENV !== "production") {
