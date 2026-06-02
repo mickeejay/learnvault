@@ -34,6 +34,7 @@ export default function NavBar() {
 	}, [menuOpen])
 
 	const navLinks = [
+		{ to: "/dashboard", label: t("nav.dashboard") },
 		{ to: "/courses", label: t("nav.learn") },
 		{ to: "/tracks", label: "Tracks" },
 		{ to: "/peer-review", label: "Peer review" },
