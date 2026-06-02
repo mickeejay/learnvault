@@ -45,6 +45,29 @@ export const buildOpenApiSpec = () => {
 						},
 						required: ["error"],
 					},
+					ZodIssue: {
+						type: "object",
+						required: ["code", "path", "message"],
+						properties: {
+							code: { type: "string", example: "invalid_type" },
+							path: {
+								type: "array",
+								items: { oneOf: [{ type: "string" }, { type: "integer" }] },
+								example: ["walletAddress"],
+							},
+							message: { type: "string", example: "Required" },
+						},
+					},
+					ValidationErrorResponse: {
+						type: "object",
+						required: ["errors"],
+						properties: {
+							errors: {
+								type: "array",
+								items: { $ref: "#/components/schemas/ZodIssue" },
+							},
+						},
+					},
 					HealthResponse: {
 						type: "object",
 						properties: {
@@ -98,11 +121,11 @@ export const buildOpenApiSpec = () => {
 				},
 				responses: {
 					BadRequestError: {
-						description: "Bad request",
+						description: "Bad request — validation failed",
 						content: {
 							"application/json": {
 								schema: {
-									$ref: "#/components/schemas/ErrorResponse",
+									$ref: "#/components/schemas/ValidationErrorResponse",
 								},
 							},
 						},
@@ -119,6 +142,16 @@ export const buildOpenApiSpec = () => {
 					},
 					NotFoundError: {
 						description: "Resource not found",
+						content: {
+							"application/json": {
+								schema: {
+									$ref: "#/components/schemas/ErrorResponse",
+								},
+							},
+						},
+					},
+					ForbiddenError: {
+						description: "Forbidden",
 						content: {
 							"application/json": {
 								schema: {

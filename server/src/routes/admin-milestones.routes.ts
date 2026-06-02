@@ -8,6 +8,8 @@ import {
 import { submitMilestoneReport } from "../controllers/milestone-submit.controller"
 import { requireAdmin } from "../middleware/admin.middleware"
 import { milestoneSubmitRateLimiter } from "../middleware/milestone-rate-limit.middleware"
+import { validate } from "../middleware/validate"
+import * as schemas from "../lib/zod-schemas"
 
 export const adminMilestonesRouter = Router()
 
@@ -133,6 +135,7 @@ adminMilestonesRouter.post(
 adminMilestonesRouter.post(
 	"/admin/milestones/:id/reject",
 	requireAdmin,
+	validate({ body: schemas.rejectMilestoneBodySchema }),
 	rejectMilestone,
 )
 
@@ -177,5 +180,6 @@ adminMilestonesRouter.post(
 adminMilestonesRouter.post(
 	"/milestones/submit",
 	milestoneSubmitRateLimiter,
+	validate({ body: schemas.submitMilestoneBodySchema }),
 	submitMilestoneReport,
 )

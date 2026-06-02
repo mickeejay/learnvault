@@ -1,6 +1,8 @@
 import { Router, type Response } from "express"
 import { pool } from "../db/index"
 import { authMiddleware, type AuthRequest } from "../middleware/auth.middleware"
+import { validate } from "../middleware/validate"
+import * as schemas from "../lib/zod-schemas"
 
 export const commentsRouter = Router()
 
@@ -43,13 +45,10 @@ commentsRouter.get("/proposals/:proposalId/comments", async (req, res) => {
 commentsRouter.post(
 	"/comments",
 	authMiddleware,
+	validate({ body: schemas.postCommentBodySchema }),
 	async (req: AuthRequest, res: Response) => {
 		const { proposalId, content, parentId } = req.body
 		const authorAddress = req.user?.address
-
-		if (!proposalId || !content) {
-			return res.status(400).json({ error: "Missing required fields" })
-		}
 
 		try {
 			// Spam protection: max 5 comments per address per proposal per day
@@ -124,14 +123,11 @@ commentsRouter.delete(
 commentsRouter.put(
 	"/comments/:id/vote",
 	authMiddleware,
+	validate({ body: schemas.voteCommentBodySchema }),
 	async (req: AuthRequest, res: Response) => {
 		const { id } = req.params
-		const { type } = req.body // 'upvote' or 'downvote'
+		const { type } = req.body
 		const voterAddress = req.user?.address
-
-		if (!["upvote", "downvote"].includes(type)) {
-			return res.status(400).json({ error: "Invalid vote type" })
-		}
 
 		const client = await pool.connect()
 		try {

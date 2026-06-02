@@ -2,6 +2,8 @@ import { Router } from "express"
 
 import { createAuthControllers } from "../controllers/auth.controller"
 import { nonceRateLimiter } from "../middleware/nonce-rate-limit.middleware"
+import { validate } from "../middleware/validate"
+import * as schemas from "../lib/zod-schemas"
 import { type AuthService } from "../services/auth.service"
 
 export function createAuthRouter(authService: AuthService): Router {
@@ -12,9 +14,13 @@ export function createAuthRouter(authService: AuthService): Router {
 		void getNonce(req, res)
 	})
 
-	router.post("/verify", (req, res) => {
-		void postVerify(req, res)
-	})
+	router.post(
+		"/verify",
+		validate({ body: schemas.verifyBodySchema }),
+		(req, res) => {
+			void postVerify(req, res)
+		},
+	)
 
 	return router
 }
