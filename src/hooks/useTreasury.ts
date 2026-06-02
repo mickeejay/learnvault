@@ -1,4 +1,11 @@
-import { useQuery } from "@tanstack/react-query"
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
+
+export interface AssetBalance {
+	asset: string
+	symbol: string
+	deposited: string
+	usd_equivalent: string
+}
 
 export interface TreasuryStats {
 	total_deposited_usdc: string
@@ -6,11 +13,14 @@ export interface TreasuryStats {
 	scholars_funded: number
 	active_proposals: number
 	donors_count: number
+	asset_balances: AssetBalance[]
 }
 
 export interface TreasuryEvent {
 	type: "deposit" | "disburse"
 	amount?: string
+	asset?: string
+	asset_symbol?: string
 	address?: string
 	scholar?: string
 	tx_hash: string
@@ -20,9 +30,9 @@ export interface TreasuryEvent {
 const API_BASE =
 	(import.meta.env.VITE_API_BASE_URL as string | undefined) ||
 	(import.meta.env.VITE_SERVER_URL as string | undefined) ||
-	"/api"
+	"/api/v1"
 
-async function fetchTreasuryStats(): Promise<TreasuryStats> {
+export async function fetchTreasuryStats(): Promise<TreasuryStats> {
 	const response = await fetch(`${API_BASE}/treasury/stats`)
 	if (!response.ok) {
 		throw new Error("Failed to load treasury stats")
@@ -31,8 +41,13 @@ async function fetchTreasuryStats(): Promise<TreasuryStats> {
 	return data
 }
 
-async function fetchTreasuryActivity(): Promise<TreasuryEvent[]> {
-	const response = await fetch(`${API_BASE}/treasury/activity?limit=20`)
+export async function fetchTreasuryActivityPage(
+	limit: number,
+	offset: number,
+): Promise<TreasuryEvent[]> {
+	const response = await fetch(
+		`${API_BASE}/treasury/activity?limit=${limit}&offset=${offset}`,
+	)
 	if (!response.ok) {
 		throw new Error("Failed to load treasury activity")
 	}
@@ -41,6 +56,7 @@ async function fetchTreasuryActivity(): Promise<TreasuryEvent[]> {
 }
 
 export function useTreasury() {
+	const activityPageSize = 10
 	const {
 		data: stats,
 		isLoading: isStatsLoading,
@@ -49,30 +65,38 @@ export function useTreasury() {
 	} = useQuery({
 		queryKey: ["treasury", "stats"],
 		queryFn: fetchTreasuryStats,
-		staleTime: 30_000,
+		staleTime: 60 * 1000,
 		refetchInterval: 60_000,
 	})
 
-	const {
-		data: activity,
-		isLoading: isActivityLoading,
-		error: activityError,
-		refetch: refetchActivity,
-	} = useQuery({
+	const activityQuery = useInfiniteQuery({
 		queryKey: ["treasury", "activity"],
-		queryFn: fetchTreasuryActivity,
-		staleTime: 30_000,
+		queryFn: ({ pageParam }) =>
+			fetchTreasuryActivityPage(activityPageSize, pageParam as number),
+		initialPageParam: 0,
+		getNextPageParam: (lastPage, pages) => {
+			if (lastPage.length < activityPageSize) return undefined
+			return pages.length * activityPageSize
+		},
+		staleTime: 60 * 1000,
 		refetchInterval: 60_000,
 	})
+
+	const activity = activityQuery.data?.pages.flat() ?? []
 
 	return {
 		stats,
-		activity: activity ?? [],
-		isLoading: isStatsLoading || isActivityLoading,
-		isError: Boolean(statsError || activityError),
+		activity,
+		isLoading: isStatsLoading || activityQuery.isLoading,
+		isError: Boolean(statsError || activityQuery.error),
+		hasMoreActivity: activityQuery.hasNextPage,
+		isLoadingMoreActivity: activityQuery.isFetchingNextPage,
+		loadMoreActivity: () => {
+			void activityQuery.fetchNextPage()
+		},
 		refetch: () => {
 			void refetchStats()
-			void refetchActivity()
+			void activityQuery.refetch()
 		},
 	}
 }

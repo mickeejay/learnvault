@@ -2,7 +2,7 @@ process.env.JWT_SECRET = "learnvault-secret"
 
 jest.mock("../db/index", () => ({
 	pool: {
-		query: jest.fn(),
+		query: jest.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
 	},
 }))
 
@@ -59,8 +59,7 @@ describe("GET /api/courses", () => {
 
 		const res = await request(buildApp()).get("/api/courses")
 		expect(res.status).toBe(200)
-		expect(res.body.total).toBe(1)
-		expect(res.body.totalPages).toBe(1)
+		expect(res.body.pagination.total).toBe(1)
 		expect(res.body.data).toHaveLength(1)
 		expect(res.body.data[0].published).toBe(true)
 	})
@@ -77,7 +76,44 @@ describe("GET /api/courses", () => {
 		)
 		expect(res.status).toBe(200)
 		expect(res.body.data).toEqual([])
-		expect(res.body.total).toBe(0)
+		expect(res.body.pagination.total).toBe(0)
+	})
+
+	it("applies search across course title and description", async () => {
+		mockedQuery
+			.mockResolvedValueOnce({ rows: [{ count: "1" }] })
+			.mockResolvedValueOnce({
+				rows: [
+					{
+						id: 1,
+						slug: "stellar-basics",
+						title: "Stellar Basics",
+						description: "Learn how Stellar works",
+						cover_image_url: null,
+						track: "web3",
+						difficulty: "beginner",
+						published_at: "2026-01-01T00:00:00.000Z",
+						created_at: "2026-01-01T00:00:00.000Z",
+						updated_at: "2026-01-02T00:00:00.000Z",
+					},
+				],
+			})
+
+		const res = await request(buildApp()).get("/api/courses?search=stellar")
+
+		expect(res.status).toBe(200)
+		expect(res.body.pagination.total).toBe(1)
+		expect(mockedQuery).toHaveBeenNthCalledWith(
+			1,
+			expect.stringContaining("c.title ILIKE $1 OR c.description ILIKE $1"),
+			["%stellar%", 12, 0],
+			["%stellar%"],
+		)
+		expect(mockedQuery).toHaveBeenNthCalledWith(
+			2,
+			expect.stringContaining("c.title ILIKE $1 OR c.description ILIKE $1"),
+			["%stellar%", 12, 0],
+		)
 	})
 
 	it("enforces max limit and computes pages", async () => {
@@ -89,9 +125,8 @@ describe("GET /api/courses", () => {
 
 		const res = await request(buildApp()).get("/api/courses?page=2&limit=999")
 		expect(res.status).toBe(200)
-		expect(res.body.limit).toBe(50)
-		expect(res.body.page).toBe(2)
-		expect(res.body.totalPages).toBe(3)
+		expect(res.body.pagination.limit).toBe(50)
+		expect(res.body.pagination.page).toBe(2)
 	})
 
 	it("supports offset parameter", async () => {
@@ -103,8 +138,8 @@ describe("GET /api/courses", () => {
 
 		const res = await request(buildApp()).get("/api/courses?offset=10&limit=10")
 		expect(res.status).toBe(200)
-		expect(res.body.page).toBe(2)
-		expect(res.body.limit).toBe(10)
+		expect(res.body.pagination.page).toBe(2)
+		expect(res.body.pagination.limit).toBe(10)
 	})
 
 	it("returns empty results for invalid difficulty", async () => {
@@ -112,10 +147,7 @@ describe("GET /api/courses", () => {
 		expect(res.status).toBe(200)
 		expect(res.body).toEqual({
 			data: [],
-			page: 1,
-			limit: 12,
-			total: 0,
-			totalPages: 0,
+			pagination: { page: 1, limit: 12, total: 0 },
 		})
 	})
 })
@@ -273,6 +305,74 @@ describe("POST /api/courses", () => {
 		expect(res.status).toBe(403)
 		expect(res.body).toEqual({ error: "Forbidden" })
 	})
+
+	it("returns 400 when prerequisites is not an array", async () => {
+		const res = await request(buildApp())
+			.post("/api/courses")
+			.set("Authorization", `Bearer ${adminToken}`)
+			.send({
+				title: "Course",
+				slug: "course-1",
+				track: "web3",
+				difficulty: "beginner",
+				prerequisites: "not-an-array",
+			})
+		expect(res.status).toBe(400)
+		expect(res.body.error).toBe("prerequisites must be an array of course IDs")
+	})
+
+	it("returns 400 when prerequisites contains non-existent IDs", async () => {
+		mockedQuery.mockResolvedValueOnce({ rows: [] }) // checking if prerequisite IDs exist (none found)
+
+		const res = await request(buildApp())
+			.post("/api/courses")
+			.set("Authorization", `Bearer ${adminToken}`)
+			.send({
+				title: "Course",
+				slug: "course-1",
+				track: "web3",
+				difficulty: "beginner",
+				prerequisites: [999],
+			})
+		expect(res.status).toBe(400)
+		expect(res.body.error).toBe("One or more prerequisite course IDs do not exist")
+	})
+
+	it("creates course successfully with valid prerequisites", async () => {
+		mockedQuery
+			.mockResolvedValueOnce({ rows: [{ id: 1 }] }) // mock checking prerequisite ID existence
+			.mockResolvedValueOnce({
+				rows: [
+					{
+						id: 11,
+						slug: "new-course",
+						title: "New Course",
+						description: "",
+						cover_image_url: null,
+						track: "web3",
+						difficulty: "beginner",
+						published_at: null,
+						created_at: "2026-01-01T00:00:00.000Z",
+						updated_at: "2026-01-01T00:00:00.000Z",
+						prerequisites: [1],
+					},
+				],
+			})
+
+		const res = await request(buildApp())
+			.post("/api/courses")
+			.set("Authorization", `Bearer ${adminToken}`)
+			.send({
+				title: "New Course",
+				slug: "new-course",
+				track: "web3",
+				difficulty: "beginner",
+				prerequisites: [1],
+			})
+
+		expect(res.status).toBe(201)
+		expect(res.body.prerequisites).toEqual([1])
+	})
 })
 
 describe("PATCH /api/courses/:id", () => {
@@ -330,5 +430,60 @@ describe("PATCH /api/courses/:id", () => {
 			.send({ slug: "taken-slug" })
 		expect(res.status).toBe(409)
 		expect(res.body).toEqual({ error: "Slug already exists" })
+	})
+
+	it("returns 400 when prerequisites includes the course itself", async () => {
+		mockedQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 1 }] })
+
+		const res = await request(buildApp())
+			.patch("/api/courses/1")
+			.set("Authorization", `Bearer ${adminToken}`)
+			.send({ prerequisites: [1] })
+		expect(res.status).toBe(400)
+		expect(res.body.error).toBe("A course cannot be a prerequisite of itself")
+	})
+
+	it("returns 400 when updating prerequisites with non-existent IDs", async () => {
+		mockedQuery
+			.mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 1 }] })
+			.mockResolvedValueOnce({ rows: [] }) // checking if prerequisite IDs exist (none found)
+
+		const res = await request(buildApp())
+			.patch("/api/courses/1")
+			.set("Authorization", `Bearer ${adminToken}`)
+			.send({ prerequisites: [999] })
+		expect(res.status).toBe(400)
+		expect(res.body.error).toBe("One or more prerequisite course IDs do not exist")
+	})
+
+	it("updates course successfully with valid prerequisites", async () => {
+		mockedQuery
+			.mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 1 }] })
+			.mockResolvedValueOnce({ rows: [{ id: 2 }] }) // checking prerequisite ID existence (2 exists)
+			.mockResolvedValueOnce({
+				rows: [
+					{
+						id: 1,
+						slug: "stellar-basics",
+						title: "Updated Title",
+						description: "Desc",
+						cover_image_url: null,
+						track: "web3",
+						difficulty: "beginner",
+						published_at: null,
+						created_at: "2026-01-01T00:00:00.000Z",
+						updated_at: "2026-01-03T00:00:00.000Z",
+						prerequisites: [2],
+					},
+				],
+			})
+
+		const res = await request(buildApp())
+			.patch("/api/courses/1")
+			.set("Authorization", `Bearer ${adminToken}`)
+			.send({ prerequisites: [2] })
+
+		expect(res.status).toBe(200)
+		expect(res.body.prerequisites).toEqual([2])
 	})
 })

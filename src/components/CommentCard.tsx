@@ -1,9 +1,10 @@
 import { formatDistanceToNow } from "date-fns"
 import React, { useId, useState } from "react"
-import ReactMarkdown from "react-markdown"
+import { useWallet } from "../hooks/useWallet"
 import { getAuthToken } from "../util/auth"
-
-const API_BASE = import.meta.env.VITE_SERVER_URL ?? "http://localhost:4000"
+import ConfirmDialog from "./ConfirmDialog"
+import SafeMarkdown from "./SafeMarkdown"
+import FlagDialog from "./FlagDialog"
 
 export interface Comment {
 	id: number
@@ -22,6 +23,7 @@ interface CommentCardProps {
 	isAuthor?: boolean
 	isReply?: boolean
 	canPin?: boolean
+	canDelete?: boolean
 	onUpdate?: () => void
 }
 
@@ -41,16 +43,62 @@ const CommentCard: React.FC<CommentCardProps> = ({
 	isAuthor,
 	isReply,
 	canPin,
+	canDelete,
 	onUpdate,
 }) => {
+	const { address } = useWallet()
 	const [isReplying, setIsReplying] = useState(false)
+	const { address } = useWallet()
 	const [replyText, setReplyText] = useState("")
 	const [replyError, setReplyError] = useState<string | null>(null)
+	const [isFlagging, setIsFlagging] = useState(false)
+	const [flagReason, setFlagReason] = useState("")
+	const [flagError, setFlagError] = useState<string | null>(null)
+	const [isEditing, setIsEditing] = useState(false)
+	const [editText, setEditText] = useState(comment.content)
+	const [editError, setEditError] = useState<string | null>(null)
 	const replyFieldId = useId()
 	const replyHintId = `${replyFieldId}-hint`
 	const replyErrorId = `${replyFieldId}-error`
 	const replySectionId = `${replyFieldId}-section`
 	const authorId = `comment-${comment.id}-author`
+
+	const isOwnComment =
+		!!address &&
+		comment.author_address.toLowerCase() === address.toLowerCase()
+
+	const handleSaveEdit = async () => {
+		if (!editText.trim()) {
+			setEditError("Comment cannot be empty.")
+			return
+		}
+		const token = getAuthToken()
+		if (!token) {
+			setEditError("Sign in to edit a comment.")
+			return
+		}
+		setEditError(null)
+		try {
+			const res = await fetch(`${API_URL}/api/comments/${comment.id}`, {
+				method: "PATCH",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${token}`,
+				},
+				body: JSON.stringify({ content: editText }),
+			})
+			if (res.ok) {
+				setIsEditing(false)
+				onUpdate?.()
+			} else {
+				const err = await res.json().catch(() => ({}))
+				setEditError(err.error || "Failed to update comment.")
+			}
+		} catch (err) {
+			console.error("Edit failed", err)
+			setEditError("Failed to update comment.")
+		}
+	}
 
 	const handleVote = async (type: "upvote" | "downvote") => {
 		const token = getAuthToken()
@@ -117,7 +165,7 @@ const CommentCard: React.FC<CommentCardProps> = ({
 				setIsReplying(false)
 				onUpdate?.()
 			} else {
-				const err = await res.json().catch(() => ({}))
+				const err = (await res.json().catch(() => ({}))) as { error?: string }
 				setReplyError(err.error || "Reply failed.")
 			}
 		} catch (err) {
@@ -131,6 +179,28 @@ const CommentCard: React.FC<CommentCardProps> = ({
 		setReplyError(null)
 	}
 
+	const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+	const handleDelete = async () => {
+		const token = getAuthToken()
+		if (!token) return
+		try {
+			const res = await fetch(`${API_URL}/api/comments/${comment.id}`, {
+				method: "DELETE",
+				headers: {
+					Authorization: `Bearer ${token}`,
+				},
+			})
+			if (res.ok) {
+				onUpdate?.()
+			}
+		} catch (err) {
+			console.error("Delete failed", err)
+		} finally {
+			setShowDeleteConfirm(false)
+		}
+	}
+
 	const replyDescriptionIds = [
 		replyHintId,
 		replyError ? replyErrorId : undefined,
@@ -140,9 +210,29 @@ const CommentCard: React.FC<CommentCardProps> = ({
 
 	return (
 		<article
+			data-testid={`comment-card-${comment.id}`}
 			className={`glass-card p-6 rounded-3xl border border-white/5 relative ${comment.is_pinned ? "border-brand-cyan/30 bg-brand-cyan/5" : ""}`}
 			aria-labelledby={authorId}
 		>
+			{showDeleteConfirm && (
+				<ConfirmDialog
+					title="Delete Comment"
+					description="Are you sure you want to delete this comment? This action is permanent and cannot be undone."
+					confirmLabel="Delete"
+					cancelLabel="Keep Comment"
+					onConfirm={() => void handleDelete()}
+					onCancel={() => setShowDeleteConfirm(false)}
+					isDestructive
+				/>
+			)}
+			{showFlagDialog && (
+				<FlagDialog
+					title="Flag Comment"
+					description="Flagging this comment will notify administrators for review. Please provide a brief explanation below."
+					onConfirm={(reason) => void handleFlag(reason)}
+					onCancel={() => setShowFlagDialog(false)}
+				/>
+			)}
 			{comment.is_pinned && (
 				<div className="absolute -top-3 left-6 px-3 py-1 bg-brand-cyan text-black text-[10px] font-black uppercase tracking-widest rounded-full flex items-center gap-1 shadow-xl">
 					Pinned by Author
@@ -172,6 +262,30 @@ const CommentCard: React.FC<CommentCardProps> = ({
 				</div>
 
 				<div className="flex gap-2">
+					{isOwnComment && (
+						<>
+							<button
+								type="button"
+								data-testid="comment-edit"
+								onClick={() => {
+									setIsEditing((v) => !v)
+									setEditText(comment.content)
+									setEditError(null)
+								}}
+								className="text-[10px] font-black uppercase text-white/70 hover:text-brand-cyan transition-colors"
+							>
+								{isEditing ? "Close" : "Edit"}
+							</button>
+							<button
+								type="button"
+								data-testid="comment-delete"
+								onClick={() => void handleDelete()}
+								className="text-[10px] font-black uppercase text-white/70 hover:text-red-400 transition-colors"
+							>
+								Delete
+							</button>
+						</>
+					)}
 					{canPin && !comment.is_pinned && (
 						<button
 							type="button"
@@ -179,6 +293,24 @@ const CommentCard: React.FC<CommentCardProps> = ({
 							className="text-[10px] font-black uppercase text-white/70 hover:text-brand-cyan transition-colors"
 						>
 							Pin
+						</button>
+					)}
+					{canDelete && (
+						<button
+							type="button"
+							onClick={() => setShowDeleteConfirm(true)}
+							className="text-[10px] font-black uppercase text-red-400/70 hover:text-red-400 transition-colors"
+						>
+							Delete
+						</button>
+					)}
+					{address && address.toLowerCase() !== comment.author_address.toLowerCase() && (
+						<button
+							type="button"
+							onClick={() => setShowFlagDialog(true)}
+							className="text-[10px] font-black uppercase text-red-400/70 hover:text-red-400 transition-colors"
+						>
+							Flag
 						</button>
 					)}
 					{!isReply && (
@@ -195,9 +327,50 @@ const CommentCard: React.FC<CommentCardProps> = ({
 				</div>
 			</header>
 
-			<div className="prose prose-invert prose-sm max-w-none text-white/80 leading-relaxed font-medium mb-8">
-				<ReactMarkdown>{comment.content}</ReactMarkdown>
-			</div>
+			{isEditing ? (
+				<div className="mb-8">
+					<textarea
+						value={editText}
+						onChange={(e) => {
+							setEditText(e.target.value)
+							if (editError) setEditError(null)
+						}}
+						data-testid="comment-edit-field"
+						className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-brand-cyan/40"
+					/>
+					{editError && (
+						<p className="mt-2 text-sm text-red-400" role="alert">
+							{editError}
+						</p>
+					)}
+					<div className="flex justify-end gap-3 mt-4">
+						<button
+							type="button"
+							onClick={() => {
+								setIsEditing(false)
+								setEditText(comment.content)
+								setEditError(null)
+							}}
+							className="px-5 py-2 text-[10px] font-black uppercase text-white/70 border border-white/10 rounded-full hover:bg-white/5 transition-colors"
+						>
+							Cancel
+						</button>
+						<button
+							type="button"
+							data-testid="comment-save-edit"
+							onClick={() => void handleSaveEdit()}
+							disabled={!editText.trim()}
+							className="px-5 py-2 bg-brand-cyan text-black text-[10px] font-black uppercase tracking-widest rounded-full hover:scale-105 transition-all disabled:opacity-50"
+						>
+							Save
+						</button>
+					</div>
+				</div>
+			) : (
+				<div className="prose prose-invert prose-sm max-w-none text-white/80 leading-relaxed font-medium mb-8">
+					<SafeMarkdown content={comment.content} />
+				</div>
+			)}
 
 			<footer className="flex items-center gap-6">
 				<div className="flex items-center bg-white/5 rounded-full p-1 border border-white/5">

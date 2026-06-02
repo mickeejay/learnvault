@@ -103,7 +103,7 @@ function formatDate(date: string): string {
 	}
 }
 
-async function fetchHistory(address: string): Promise<ApiEvent[]> {
+export async function fetchHistory(address: string): Promise<ApiEvent[]> {
 	const endpoint = `${API_URL}/api/events?address=${encodeURIComponent(address)}&limit=${HISTORY_LIMIT}`
 	const response = await fetch(endpoint)
 	if (!response.ok) {
@@ -207,8 +207,14 @@ const History: React.FC = () => {
 						{error instanceof Error ? error.message : "Failed to load activity"}
 					</div>
 				) : items.length === 0 ? (
-					<div className="rounded-2xl border border-white/10 p-8 text-center text-white/50">
-						No transactions found for this wallet yet.
+					<div className="p-8">
+						<EmptyState
+							icon="📭"
+							title="No transactions yet"
+							description="You have no on-chain transactions for this wallet. Interact with courses or the treasury to generate activity."
+							ctaLabel="Browse learning"
+							ctaHref="/learn"
+						/>
 					</div>
 				) : (
 					<div className="space-y-3">

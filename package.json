@@ -3,13 +3,18 @@
   "type": "module",
   "version": "0.0.1",
   "private": true,
+  "overrides": {
+    "protobufjs": ">=7.5.5"
+  },
   "scripts": {
     "dev": "npm start",
+    "dev:docker": "docker compose --profile frontend up --build",
+    "dev:docker:clean": "docker compose --profile frontend down --volumes --remove-orphans",
     "dev:server": "npm run dev --prefix server",
     "dev:ui": "vite",
     "start": "node scripts/start-dev.mjs",
     "start:full": "concurrently --kill-others-on-fail --names stellar,vite -c gray,green --pad-prefix \"stellar scaffold watch --build-clients\" \"vite\"",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
     "generate:clients": "bash scripts/generate-clients.sh",
     "install:contracts": "if ls packages/*/package.json > /dev/null 2>&1; then npm install --workspaces && npm run build --workspaces --if-present; else echo 'No contract client packages found. Run: npm run generate:clients'; fi",
     "preview": "vite preview",
@@ -17,19 +22,23 @@
     "test:e2e": "playwright test",
     "format": "prettier . --write",
     "docs:generate": "npm run docs:generate --prefix server",
-    "prepare": "husky",
+    "prepare": "command -v husky >/dev/null 2>&1 && husky || true",
     "typecheck": "tsc",
     "test": "cargo test --workspace",
     "test:frontend": "vitest run",
     "test:contracts": "cargo test --workspace",
     "test:watch": "cargo watch -x 'test --workspace'",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "i18n:scan": "npx i18next-scanner --config ./i18next-scanner.config.js",
+    "i18n:pseudo": "node scripts/generate-pseudo-locale.mjs"
   },
   "workspaces": [
     "packages/*"
   ],
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^2.0.1",
+    "@sentry/browser": "^9.0.0",
+    "@sentry/react": "^9.0.0",
     "@stellar/design-system": "^3.2.7",
     "@stellar/stellar-sdk": "^14.4.3",
     "@stellar/stellar-xdr-json": "^23.0.0",
@@ -39,6 +48,8 @@
     "@theahaco/ts-config": "^1.2.0",
     "canvas-confetti": "^1.9.4",
     "date-fns": "^4.1.0",
+    "deps": "^1.0.0",
+    "driver.js": "^1.4.0",
     "framer-motion": "^12.38.0",
     "i18next": "^25.10.5",
     "i18next-browser-languagedetector": "^8.2.1",
@@ -65,6 +76,7 @@
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/canvas-confetti": "^1.9.0",
+    "@types/helmet": "^4.0.0",
     "@types/lodash": "^4.17.23",
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",
@@ -85,9 +97,10 @@
     "recharts": "^3.8.0",
     "typescript": "~5.9.3",
     "vite": "^8.0.3",
-    "vite-plugin-node-polyfills": "^0.25.0",
+    "vite-plugin-node-polyfills": "^0.26.0",
     "vite-plugin-wasm": "^3.5.0",
-    "vitest": "^4.1.1"
+    "vitest": "^4.1.1",
+    "i18next-scanner": "^4.3.1"
   },
   "lint-staged": {
     "**/*": [

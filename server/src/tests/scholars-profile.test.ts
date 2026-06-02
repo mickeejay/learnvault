@@ -4,7 +4,7 @@ import request from "supertest"
 // Mock internal modules
 jest.mock("../db/index", () => ({
 	pool: {
-		query: jest.fn(),
+		query: jest.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
 	},
 }))
 
@@ -28,12 +28,22 @@ import { pool } from "../db/index"
 const mockedQuery = pool.query as jest.Mock
 
 // We need a helper to build the app with mocked dependencies
-import { scholarsRouter } from "../routes/scholars.routes"
+import { createScholarsRouter } from "../routes/scholars.routes"
+import { type JwtService } from "../services/jwt.service"
 
-const buildApp = (): Express => {
+const testJwtService: JwtService = {
+	signWalletToken: () => "mock-token",
+	verifyWalletToken: async (_token: string) => ({
+		sub: "GSCHOLAR1",
+		jti: "test-jti",
+	}),
+	revokeToken: async () => {},
+}
+
+const buildApp = (): express.Express => {
 	const app = express()
 	app.use(express.json())
-	app.use("/api", scholarsRouter)
+	app.use("/api", createScholarsRouter(testJwtService))
 	return app
 }
 
@@ -70,6 +80,9 @@ describe("GET /api/scholars/:address", () => {
 					issued_at: "2026-03-26T15:00:00Z",
 				},
 			],
+			follower_count: 0,
+			following_count: 0,
+			is_following: false,
 			joined_at: "2026-01-15T10:00:00.000Z",
 		})
 	})

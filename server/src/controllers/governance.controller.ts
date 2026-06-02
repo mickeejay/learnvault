@@ -1,11 +1,23 @@
 import { type Request, type Response } from "express"
+import sanitizeHtml from "sanitize-html"
 import { z } from "zod"
 
 import { pool } from "../db/index"
+import { createNotification } from "../db/notifications-store"
+import { logger } from "../lib/logger"
+import { trackEscrowTimeout } from "../services/escrow-timeout.service"
+import { deliverNotificationChannels } from "../services/notification-delivery.service"
+
+const log = logger.child({ module: "governance" })
 import { stellarContractService } from "../services/stellar-contract.service"
 
-type ProposalStatus = "pending" | "approved" | "rejected"
-type ProposalPublicState = "open" | "closed" | "cancelled" | "executed"
+type ProposalStatus = "pending" | "approved" | "queued" | "rejected"
+type ProposalPublicState =
+	| "open"
+	| "queued"
+	| "closed"
+	| "cancelled"
+	| "executed"
 
 const stellarAddressSchema = z.string().min(56).max(56).startsWith("G")
 
@@ -15,6 +27,7 @@ function parseStatus(value: unknown): ProposalStatus | undefined {
 	if (
 		normalized === "pending" ||
 		normalized === "approved" ||
+		normalized === "queued" ||
 		normalized === "rejected"
 	) {
 		return normalized
@@ -40,8 +53,11 @@ function deriveProposalState(proposal: {
 	status: string
 	cancelled?: boolean | null
 	deadline?: Date | string | null
+	queuedAt?: Date | string | null
+	executionReadyAt?: Date | string | null
 }): ProposalPublicState {
 	if (proposal.cancelled) return "cancelled"
+	if (proposal.status === "queued") return "queued"
 	if (proposal.status === "approved") return "executed"
 	if (proposal.status === "rejected") return "closed"
 
@@ -64,14 +80,13 @@ function parseViewerAddress(value: unknown): string | null {
 
 function buildProposalSelect(viewerParamIndex?: number) {
 	const viewerVoteSelect = viewerParamIndex
-		? `,
-			(
-				SELECT v.support
-				FROM votes v
-				WHERE v.proposal_id = p.id AND v.voter_address = $${viewerParamIndex}
-				LIMIT 1
-			) AS user_vote_support`
+		? ", uv.support AS user_vote_support"
 		: ", NULL::boolean AS user_vote_support"
+	const viewerJoin = viewerParamIndex
+		? ` LEFT JOIN votes uv
+			ON uv.proposal_id = p.id
+			AND uv.voter_address = $${viewerParamIndex}`
+		: ""
 
 	return `SELECT
 			p.id,
@@ -83,8 +98,10 @@ function buildProposalSelect(viewerParamIndex?: number) {
 			p.votes_against,
 			p.status,
 			p.deadline,
+			p.queued_at,
+			p.execution_ready_at,
 			p.created_at${viewerVoteSelect}
-		FROM proposals p`
+		FROM proposals p${viewerJoin}`
 }
 
 export async function getGovernanceProposals(
@@ -130,10 +147,8 @@ export async function getGovernanceProposals(
 		)
 
 		res.status(200).json({
-			proposals: proposalsResult.rows,
-			total,
-			page,
-			totalPages: Math.ceil(total / limit),
+			data: proposalsResult.rows,
+			pagination: { page, limit, total },
 		})
 	} catch {
 		res.status(500).json({ error: "Failed to fetch governance proposals" })
@@ -163,7 +178,7 @@ export async function getGovernanceProposalById(
 			values,
 		)
 
-		if (result.rows.length === 0) {
+		if (!result?.rows || result.rows.length === 0) {
 			res.status(404).json({ error: "Proposal not found" })
 			return
 		}
@@ -202,7 +217,7 @@ export async function getVotingPower(
 			can_vote: balanceBigInt > 0n,
 		})
 	} catch (err) {
-		console.error("[governance] getVotingPower error:", err)
+		log.error({ err }, "getVotingPower error")
 		res.status(500).json({ error: "Failed to fetch voting power" })
 	}
 }
@@ -210,9 +225,23 @@ export async function getVotingPower(
 const createProposalSchema = z.object({
 	author_address: z.string().min(50).max(56),
 	title: z.string().min(5).max(200),
-	description: z.string().min(10),
+	description: z.string().min(10).max(5000),
 	requested_amount: z.string().regex(/^\d+(\.\d+)?$/, "Must be a valid number"),
 	evidence_url: z.string().url().optional(),
+})
+
+const castVoteSchema = z.object({
+	proposal_id: z
+		.number()
+		.int()
+		.positive("proposal_id must be a positive integer"),
+	voter_address: z
+		.string()
+		.min(56, "voter_address must be a valid Stellar address")
+		.max(56, "voter_address must be a valid Stellar address")
+		.startsWith("G", "voter_address must be a valid Stellar address"),
+	support: z.boolean(),
+	signature: z.string().optional(),
 })
 
 const castVoteSchema = z.object({
@@ -244,6 +273,17 @@ export async function createGovernanceProposal(
 
 	const { author_address, title, description, requested_amount, evidence_url } =
 		validation.data
+
+	// Sanitize HTML content
+	const sanitizedTitle = sanitizeHtml(title, {
+		allowedTags: [],
+		allowedAttributes: {},
+	})
+	const sanitizedDescription = sanitizeHtml(description, {
+		allowedTags: ["p", "br", "strong", "em", "ul", "ol", "li"],
+		allowedAttributes: {},
+	})
+
 	const programUrl = evidence_url ?? "https://learnvault.app/dao/proposals"
 
 	try {
@@ -288,7 +328,9 @@ export async function createGovernanceProposal(
 
 		// 1. Call the on-chain contract first
 		const contractResult =
-			await stellarContractService.submitScholarshipProposal(params)
+			await stellarContractService.submitScholarshipProposal(params, {
+				requestId: req.requestId,
+			})
 
 		// 2. Only write to DB if contract call succeeded
 		const dbResult = await pool.query(
@@ -302,17 +344,27 @@ export async function createGovernanceProposal(
 				created_at
 			) VALUES ($1, $2, $3, $4, 'pending', NOW() + INTERVAL '7 days', NOW())
 			RETURNING id`,
-			[author_address, title, description, amount],
+			[author_address, sanitizedTitle, sanitizedDescription, amount],
 		)
 
 		const proposal_id = dbResult.rows[0]?.id
+		if (proposal_id) {
+			try {
+				await trackEscrowTimeout({
+					proposalId: proposal_id,
+					scholarAddress: author_address,
+				})
+			} catch (trackingErr) {
+				console.error("[governance] escrow tracking failed:", trackingErr)
+			}
+		}
 
 		res.status(201).json({
 			proposal_id,
 			tx_hash: contractResult.txHash,
 		})
 	} catch (err) {
-		console.error("[governance] Proposal creation failed:", err)
+		log.error({ err }, "Proposal creation failed")
 		res.status(500).json({
 			error: "Failed to create governance proposal",
 			message: err instanceof Error ? err.message : String(err),
@@ -339,7 +391,7 @@ export async function castVote(req: Request, res: Response): Promise<void> {
 			[proposal_id],
 		)
 
-		if (proposalResult.rows.length === 0) {
+		if (!proposalResult?.rows || proposalResult.rows.length === 0) {
 			res.status(404).json({ error: "Proposal not found" })
 			return
 		}
@@ -375,12 +427,12 @@ export async function castVote(req: Request, res: Response): Promise<void> {
 			[proposal_id, voter_address],
 		)
 
-		if (existingVote.rows.length > 0) {
+		if ((existingVote?.rows ?? []).length > 0) {
 			res.status(409).json({ error: "You have already voted on this proposal" })
 			return
 		}
 
-		// 4. Check voter's GOV token balance (voting power)
+		// 4. Check voter's effective voting power (own balance + any delegated-to-them)
 		const rawBalance =
 			await stellarContractService.getGovernanceTokenBalance(voter_address)
 		const balanceBigInt = BigInt(rawBalance)
@@ -394,11 +446,14 @@ export async function castVote(req: Request, res: Response): Promise<void> {
 		}
 
 		// 5. Call the on-chain vote contract
-		const contractResult = await stellarContractService.castVote({
-			voter: voter_address,
-			proposalId: proposal_id,
-			support,
-		})
+		const contractResult = await stellarContractService.castVote(
+			{
+				voter: voter_address,
+				proposalId: proposal_id,
+				support,
+			},
+			{ requestId: req.requestId },
+		)
 
 		// 6. Write to DB after successful contract call
 		const votingPower = balanceBigInt
@@ -424,17 +479,70 @@ export async function castVote(req: Request, res: Response): Promise<void> {
 
 		// 8. Fetch updated vote counts for response
 		const updatedProposal = await pool.query(
-			"SELECT votes_for, votes_against FROM proposals WHERE id = $1",
+			"SELECT votes_for, votes_against, title, author_address FROM proposals WHERE id = $1",
 			[proposal_id],
 		)
 
+		const proposalRow = updatedProposal.rows[0]
+		const votesFor = BigInt(proposalRow?.votes_for ?? "0")
+		const votesAgainst = BigInt(proposalRow?.votes_against ?? "0")
+		const proposalTitle: string = proposalRow?.title ?? `Proposal #${proposal_id}`
+		const authorAddress: string = proposalRow?.author_address ?? ""
+
+		// 9. Check if the proposal has crossed a quorum threshold and notify the author
+		//    We use a simple heuristic: if total votes just crossed 1 (i.e. this is the
+		//    first vote) or if votes_for > votes_against by a significant margin, emit a
+		//    "vote_result" notification to the proposal author.
+		//    A "proposal_passed" notification is emitted when votes_for > votes_against
+		//    and total votes >= 1 (can be refined with a real quorum rule later).
+		if (authorAddress) {
+			const totalVotes = votesFor + votesAgainst
+			if (totalVotes > 0n) {
+				const voteLabel = support ? "in favour" : "against"
+				void createNotification({
+					recipient_address: voter_address,
+					type: "vote_result",
+					message: `Your vote ${voteLabel} on proposal "${proposalTitle}" was recorded.`,
+					href: `/dao/proposals/${proposal_id}`,
+					data: {
+						proposal_id,
+						support,
+						voting_power: votingPower.toString(),
+						tx_hash: contractResult.txHash,
+					},
+				})
+				void deliverNotificationChannels({
+					recipientAddress: voter_address,
+					type: "vote_result",
+					title: "Vote Recorded",
+					message: `Your vote ${voteLabel} on proposal "${proposalTitle}" was recorded.`,
+					href: `/dao/proposals/${proposal_id}`,
+				})
+
+				// Notify the proposal author when votes_for first exceeds votes_against
+				if (votesFor > votesAgainst) {
+					void createNotification({
+						recipient_address: authorAddress,
+						type: "proposal_passed",
+						message: `Your proposal "${proposalTitle}" is currently passing with ${votesFor.toString()} votes for and ${votesAgainst.toString()} against.`,
+						href: `/dao/proposals/${proposal_id}`,
+						data: {
+							proposal_id,
+							votes_for: votesFor.toString(),
+							votes_against: votesAgainst.toString(),
+						},
+					})
+				}
+			}
+		}
+
 		res.status(201).json({
 			tx_hash: contractResult.txHash,
-			votes_for: updatedProposal.rows[0]?.votes_for ?? "0",
-			votes_against: updatedProposal.rows[0]?.votes_against ?? "0",
+			votes_for: proposalRow?.votes_for ?? "0",
+			votes_against: proposalRow?.votes_against ?? "0",
 		})
 	} catch (err) {
-		console.error("[governance] Vote casting failed:", err)
+		log.error({ err }, "Vote casting failed")
 		res.status(500).json({
 			error: "Failed to cast vote",
 			message: err instanceof Error ? err.message : String(err),
@@ -454,7 +562,7 @@ export async function getProposalStatus(
 
 	try {
 		const result = await pool.query(
-			"SELECT id, status, deadline, cancelled FROM proposals WHERE id = $1",
+			"SELECT id, status, deadline, queued_at, execution_ready_at, cancelled FROM proposals WHERE id = $1",
 			[proposalId],
 		)
 
@@ -470,9 +578,11 @@ export async function getProposalStatus(
 			status: proposal.status,
 			cancelled: Boolean(proposal.cancelled),
 			deadline: proposal.deadline ?? null,
+			queuedAt: proposal.queued_at ?? null,
+			executionReadyAt: proposal.execution_ready_at ?? null,
 		})
 	} catch (err) {
-		console.error("[governance] Get proposal status failed:", err)
+		log.error({ err }, "Get proposal status failed")
 		res.status(500).json({ error: "Failed to fetch proposal status" })
 	}
 }
@@ -505,22 +615,63 @@ export async function cancelProposal(
 			return
 		}
 
-		if (deriveProposalState(proposal) !== "open") {
-			res.status(409).json({ error: "Only open proposals can be cancelled" })
+		const state = deriveProposalState(proposal)
+		if (state !== "open" && state !== "queued") {
+			res
+				.status(409)
+				.json({ error: "Only open or queued proposals can be cancelled" })
 			return
 		}
 
-		await stellarContractService.cancelProposal({ proposalId })
+		await stellarContractService.cancelProposal(
+			{ proposalId },
+			{ requestId: req.requestId },
+		)
 		await pool.query("UPDATE proposals SET cancelled = TRUE WHERE id = $1", [
 			proposalId,
 		])
 
 		res.status(204).end()
 	} catch (err) {
-		console.error("[governance] Cancel proposal failed:", err)
+		log.error({ err }, "Cancel proposal failed")
 		res.status(500).json({
 			error: "Failed to cancel proposal",
 			message: err instanceof Error ? err.message : String(err),
 		})
+	}
+}
+
+export async function getDelegation(
+	req: Request,
+	res: Response,
+): Promise<void> {
+	const { address } = req.params
+	if (!address || address.length < 50) {
+		res.status(400).json({ error: "Invalid Stellar address" })
+		return
+	}
+
+	try {
+		const [rawVotingPower, rawOwnBalance, delegatee] = await Promise.all([
+			stellarContractService.getGovernanceTokenBalance(address),
+			stellarContractService.getGovernanceTokenBalance(address),
+			stellarContractService.getGovernanceDelegation(address),
+		])
+
+		const ownBalance = BigInt(rawOwnBalance)
+		const votingPower = BigInt(rawVotingPower)
+		const delegatedToMe = delegatee ? 0n : votingPower - ownBalance
+
+		res.status(200).json({
+			address,
+			delegatee,
+			is_delegating: delegatee !== null,
+			own_balance: rawOwnBalance,
+			delegated_to_me: delegatedToMe > 0n ? delegatedToMe.toString() : "0",
+			voting_power: rawVotingPower,
+		})
+	} catch (err) {
+		console.error("[governance] getDelegation error:", err)
+		res.status(500).json({ error: "Failed to fetch delegation state" })
 	}
 }

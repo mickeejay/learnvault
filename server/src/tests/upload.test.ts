@@ -33,19 +33,21 @@ const JWT_SECRET = "learnvault-secret"
 
 const testJwtService = {
 	signWalletToken: (addr: string) => jwt.sign({ sub: addr }, JWT_SECRET),
-	verifyWalletToken: (token: string) => {
+	verifyWalletToken: async (token: string) => {
 		const d = jwt.verify(token, JWT_SECRET) as {
 			sub?: string
 			address?: string
+			jti?: string
 		}
 		const sub = d.sub ?? d.address ?? ""
 		if (!sub) throw new Error("Invalid token")
-		return { sub }
+		return { sub, jti: d.jti ?? "test-jti" }
 	},
+	revokeToken: async () => {},
 }
 
 function makeToken(address = "GUSER123") {
-	return jwt.sign({ address }, JWT_SECRET, { expiresIn: "1h" })
+	return jwt.sign({ address, jti: "test-jti" }, JWT_SECRET, { expiresIn: "1h" })
 }
 
 function buildApp() {
