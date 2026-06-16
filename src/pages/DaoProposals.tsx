@@ -278,7 +278,7 @@ const DaoProposals: React.FC = () => {
 
 	if (isLoading) {
 		return (
-			<div className="p-12 max-w-5xl mx-auto text-center h-[60vh] flex flex-col items-center justify-center">
+			<div className="p-6 md:p-12 max-w-5xl mx-auto text-center h-[60vh] flex flex-col items-center justify-center">
 				<div className="w-12 h-12 border-4 border-brand-cyan/20 border-t-brand-cyan rounded-full animate-spin mb-4" />
 				<p className="text-white/60 font-medium">Loading proposals...</p>
 			</div>
@@ -287,7 +287,7 @@ const DaoProposals: React.FC = () => {
 
 	if (error) {
 		return (
-			<div className="p-12 max-w-5xl mx-auto text-white animate-in fade-in slide-in-from-bottom-8 duration-1000">
+			<div className="p-6 md:p-12 max-w-5xl mx-auto text-white animate-in fade-in slide-in-from-bottom-8 duration-1000">
 				<ErrorState
 					message={(error as Error).message || String(error)}
 					onRetry={() => void refetch()}
@@ -298,14 +298,14 @@ const DaoProposals: React.FC = () => {
 
 	if (proposals.length === 0) {
 		return (
-			<div className="p-12 max-w-5xl mx-auto text-white animate-in fade-in slide-in-from-bottom-8 duration-1000">
+			<div className="p-6 md:p-12 max-w-5xl mx-auto text-white animate-in fade-in slide-in-from-bottom-8 duration-1000">
 				<NoProposalsEmptyState />
 			</div>
 		)
 	}
 
 	return (
-		<div className="p-12 max-w-5xl mx-auto text-white animate-in fade-in slide-in-from-bottom-8 duration-1000">
+		<div className="p-6 md:p-12 max-w-5xl mx-auto text-white animate-in fade-in slide-in-from-bottom-8 duration-1000">
 			<Helmet>
 				<title>{title}</title>
 			</Helmet>

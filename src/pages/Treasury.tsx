@@ -275,7 +275,10 @@ const Treasury: React.FC = () => {
 	const description = `LearnVault's decentralized scholarship treasury holds ${displayStats.totalTreasury} and has funded ${displayStats.scholarsFunded} scholars. View real-time inflows and disbursements.`
 
 	return (
-		<div aria-busy={isLoading} className="p-12 max-w-7xl mx-auto min-h-screen text-white animate-in fade-in duration-1000">
+		<div
+			aria-busy={isLoading}
+			className="p-6 md:p-12 max-w-7xl mx-auto min-h-screen text-white animate-in fade-in duration-1000"
+		>
 			<Helmet>
 				<title>{title}</title>
 				<meta property="og:title" content={title} />

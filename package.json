@@ -20,6 +20,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "test:e2e": "playwright test",
+    "test:responsive": "playwright test e2e/responsive-layout.spec.ts",
     "format": "prettier . --write",
     "docs:generate": "npm run docs:generate --prefix server",
     "prepare": "command -v husky >/dev/null 2>&1 && husky || true",
