@@ -42,6 +42,7 @@ import { sponsorsRouter } from "./routes/sponsors.routes"
 import { treasuryRouter } from "./routes/treasury.routes"
 import { createUploadRouter } from "./routes/upload.routes"
 import { validatorRouter } from "./routes/validator.routes"
+import { webhooksRouter } from "./routes/webhooks.routes"
 import { wikiRouter } from "./routes/wiki.routes"
 import { createAuthService } from "./services/auth.service"
 import {
@@ -138,6 +139,11 @@ app.use(
 )
 
 app.use(createRequireTrustedOrigin(allowedOrigins))
+app.use(
+	"/api/webhooks",
+	express.raw({ type: "application/json" }),
+	webhooksRouter,
+)
 app.use(express.json())
 app.use(globalLimiter)
 
