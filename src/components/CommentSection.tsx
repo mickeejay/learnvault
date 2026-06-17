@@ -27,7 +27,9 @@ const API_URL = (
 	""
 ).replace(/\/$/, "")
 
-const CommentSection = ({
+import ErrorBoundary from "./ErrorBoundary"
+
+const CommentSectionContent = ({
 	proposalId,
 	proposalAuthor,
 }: CommentSectionProps) => {
@@ -273,5 +275,11 @@ const CommentSection = ({
 		</div>
 	)
 }
+
+const CommentSection = (props: CommentSectionProps) => (
+	<ErrorBoundary>
+		<CommentSectionContent {...props} />
+	</ErrorBoundary>
+)
 
 export default CommentSection

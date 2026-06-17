@@ -1,4 +1,5 @@
 import { Routes, Route, Outlet } from "react-router-dom"
+import ErrorBoundary from "./components/ErrorBoundary"
 import Footer from "./components/Footer"
 import NavBar from "./components/NavBar"
 import Admin from "./pages/Admin"
@@ -89,7 +90,9 @@ const AppLayout = () => {
 			<main id="main-content" className="relative z-10 flex-1" tabIndex={-1}>
 				<AnimatePresence mode="wait">
 					<motion.div key={location.pathname} {...pageTransition}>
-						<Outlet />
+						<ErrorBoundary>
+							<Outlet />
+						</ErrorBoundary>
 					</motion.div>
 				</AnimatePresence>
 			</main>

@@ -38,6 +38,7 @@
   ],
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^2.0.1",
+    "@rolldown/binding-darwin-x64": "^1.1.1",
     "@sentry/browser": "^9.0.0",
     "@sentry/react": "^9.0.0",
     "@stellar/design-system": "^3.2.7",
@@ -92,6 +93,7 @@
     "glob": "^13.0.0",
     "globals": "^17.0.0",
     "husky": "^9.1.7",
+    "i18next-scanner": "^4.3.1",
     "jsdom": "^29.0.1",
     "lint-staged": "^16.2.7",
     "prettier": "^3.8.0",
@@ -100,8 +102,7 @@
     "vite": "^8.0.3",
     "vite-plugin-node-polyfills": "^0.26.0",
     "vite-plugin-wasm": "^3.5.0",
-    "vitest": "^4.1.1",
-    "i18next-scanner": "^4.3.1"
+    "vitest": "^4.1.1"
   },
   "lint-staged": {
     "**/*": [

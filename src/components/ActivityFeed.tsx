@@ -8,6 +8,7 @@ import {
 	type ActivityEventFilter,
 } from "../hooks/useActivityFeed"
 import { useWallet } from "../hooks/useWallet"
+import ErrorBoundary from "./ErrorBoundary"
 import { EmptyState as StateEmpty } from "./states/emptyState"
 
 export interface ActivityFeedProps {
@@ -140,7 +141,7 @@ function EmptyState() {
 	)
 }
 
-export function ActivityFeed({
+function ActivityFeedContent({
 	address,
 	limit = 10,
 	filter: initialFilter = "all",
@@ -170,19 +171,21 @@ export function ActivityFeed({
 					<div className="flex bg-white/5 p-1 rounded-full border border-white/10 self-start">
 						<button
 							onClick={() => setActiveFilter(address ? "all" : "all")}
-							className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${activeFilter !== "followed"
+							className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
+								activeFilter !== "followed"
 									? "bg-brand-cyan text-black"
 									: "text-white/40 hover:text-white/70"
-								}`}
+							}`}
 						>
 							{address ? "Mine" : "All"}
 						</button>
 						<button
 							onClick={() => setActiveFilter("followed")}
-							className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${activeFilter === "followed"
+							className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
+								activeFilter === "followed"
 									? "bg-brand-cyan text-black"
 									: "text-white/40 hover:text-white/70"
-								}`}
+							}`}
 						>
 							Following
 						</button>
@@ -211,7 +214,11 @@ export function ActivityFeed({
 									? "Find and follow scholars to see their activity here."
 									: "Start learning to see activity from your progress."
 							}
-							ctaLabel={activeFilter === "followed" ? "Browse scholars" : "Browse courses"}
+							ctaLabel={
+								activeFilter === "followed"
+									? "Browse scholars"
+									: "Browse courses"
+							}
 							ctaHref={activeFilter === "followed" ? "/leaderboard" : "/learn"}
 						/>
 					</div>
@@ -236,6 +243,14 @@ export function ActivityFeed({
 				)}
 			</div>
 		</section>
+	)
+}
+
+export function ActivityFeed(props: ActivityFeedProps) {
+	return (
+		<ErrorBoundary>
+			<ActivityFeedContent {...props} />
+		</ErrorBoundary>
 	)
 }
 

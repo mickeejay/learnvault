@@ -8,9 +8,15 @@ import {
 
 const Stars = ({ value }: { value: number }) => {
 	return (
-		<div className="flex items-center gap-1" aria-label={`${value} star rating`}>
+		<div
+			className="flex items-center gap-1"
+			aria-label={`${value} star rating`}
+		>
 			{Array.from({ length: 5 }).map((_, idx) => (
-				<span key={idx} className={idx < value ? "text-yellow-300" : "text-white/20"}>
+				<span
+					key={idx}
+					className={idx < value ? "text-yellow-300" : "text-white/20"}
+				>
 					★
 				</span>
 			))}
@@ -18,10 +24,12 @@ const Stars = ({ value }: { value: number }) => {
 	)
 }
 
-export const CourseReviewsPanel: React.FC<{ courseId: string; canReview: boolean }> = ({
-	courseId,
-	canReview,
-}) => {
+import ErrorBoundary from "./ErrorBoundary"
+
+export const CourseReviewsPanelContent: React.FC<{
+	courseId: string
+	canReview: boolean
+}> = ({ courseId, canReview }) => {
 	const [page, setPage] = useState(1)
 	const [rating, setRating] = useState(0)
 	const [text, setText] = useState("")
@@ -93,7 +101,11 @@ export const CourseReviewsPanel: React.FC<{ courseId: string; canReview: boolean
 							disabled={upsert.isPending || rating < 1 || text.length > 500}
 							className="px-4 py-2 rounded-full border border-brand-cyan/40 text-brand-cyan disabled:opacity-40"
 						>
-							{upsert.isPending ? "Saving..." : ownReview && !isEditing ? "Update review" : "Submit review"}
+							{upsert.isPending
+								? "Saving..."
+								: ownReview && !isEditing
+									? "Update review"
+									: "Submit review"}
 						</button>
 						{ownReview && !isEditing && (
 							<button
@@ -113,26 +125,41 @@ export const CourseReviewsPanel: React.FC<{ courseId: string; canReview: boolean
 			)}
 
 			{reviewsQuery.data?.unavailable ? (
-				<p className="text-sm text-white/50">Reviews are not available yet for this course.</p>
+				<p className="text-sm text-white/50">
+					Reviews are not available yet for this course.
+				</p>
 			) : (
 				<>
 					<div className="space-y-4">
 						{(reviewsQuery.data?.reviews ?? []).map((review) => (
-							<article key={review.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
+							<article
+								key={review.id}
+								className="rounded-xl border border-white/10 bg-white/5 p-4"
+							>
 								<div className="flex items-center justify-between gap-3 mb-2">
-									<div className="text-xs text-white/60" title={review.walletAddress}>
-										{review.walletAddress.slice(0, 6)}...{review.walletAddress.slice(-4)}
+									<div
+										className="text-xs text-white/60"
+										title={review.walletAddress}
+									>
+										{review.walletAddress.slice(0, 6)}...
+										{review.walletAddress.slice(-4)}
 										{review.isOwn ? " (You)" : ""}
 									</div>
 									<Stars value={review.rating} />
 								</div>
-								<p className="text-sm text-white/75 whitespace-pre-wrap">{review.text || "No comment."}</p>
+								<p className="text-sm text-white/75 whitespace-pre-wrap">
+									{review.text || "No comment."}
+								</p>
 							</article>
 						))}
 					</div>
 					{(reviewsQuery.data?.reviews?.length ?? 0) > 0 && (
 						<div className="mt-6">
-							<Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+							<Pagination
+								page={page}
+								totalPages={totalPages}
+								onPageChange={setPage}
+							/>
 						</div>
 					)}
 				</>
@@ -140,5 +167,14 @@ export const CourseReviewsPanel: React.FC<{ courseId: string; canReview: boolean
 		</section>
 	)
 }
+
+export const CourseReviewsPanel: React.FC<{
+	courseId: string
+	canReview: boolean
+}> = (props) => (
+	<ErrorBoundary>
+		<CourseReviewsPanelContent {...props} />
+	</ErrorBoundary>
+)
 
 export default CourseReviewsPanel
